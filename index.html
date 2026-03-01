@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ABO血型遺傳練習</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
+
+        :root {
+            /* 父方配色：黃橘色系 */
+            --father-bg: #ffedd5; 
+            --father-border: #f97316; 
+            
+            /* 母方配色：綠色系 */
+            --mother-bg: #dcfce7; 
+            --mother-border: #22c55e; 
+            
+            --grid-header: 85px;
+            --grid-cell: 135px;
+            --allele-size: 56px;
+            --grid-gap: 12px;
+        }
+
+        body {
+            background-color: #f8fafc;
+            font-family: 'Noto Sans TC', system-ui, -apple-system, sans-serif;
+            user-select: none;
+            overflow-x: hidden;
+            touch-action: pan-y;
+        }
+
+        /* 移除數字輸入框的上下轉軸 */
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+
+        /* 棋盤佈局 */
+        .punnett-grid {
+            display: grid;
+            grid-template-columns: var(--grid-header) var(--grid-cell) var(--grid-cell);
+            grid-template-rows: var(--grid-header) var(--grid-cell) var(--grid-cell);
+            gap: var(--grid-gap);
+        }
+
+        /* 統計面板對齊網格 */
+        .stats-grid-container {
+            display: grid;
+            grid-template-rows: var(--grid-header) var(--grid-cell) var(--grid-cell);
+            gap: var(--grid-gap);
+        }
+
+        .slot {
+            border: 3px dashed #cbd5e1;
+            border-radius: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            background-color: white;
+            transition: all 0.3s;
+        }
+
+        /* 配子槽位顏色 */
+        .slot.father-source { background-color: #fff7ed; border-color: #ffedd5; }
+        .slot.mother-source { background-color: #f0fdf4; border-color: #dcfce7; }
+        .slot.occupied { border: 3px solid #64748b; }
+
+        .cell {
+            background-color: white;
+            border: 3px solid #e2e8f0;
+            border-radius: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            transition: all 0.2s;
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+        }
+
+        .allele {
+            width: var(--allele-size);
+            height: var(--allele-size);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 900;
+            font-size: 1.4rem;
+            color: #000;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+            z-index: 10;
+            cursor: grab;
+            touch-action: none;
+        }
+        
+        .allele-father { background-color: var(--father-bg); border: 2.5px solid var(--father-border); }
+        .allele-mother { background-color: var(--mother-bg); border: 2.5px solid var(--mother-border); }
+
+        .dragging {
+            position: absolute !important;
+            pointer-events: none;
+            z-index: 9999;
+            transform: scale(1.1);
+            box-shadow: 0 15px 25px rgba(0,0,0,0.2);
+            opacity: 0.9;
+        }
+
+        /* 血型色彩編碼 */
+        .type-A { color: #ef4444; border-color: #ef4444; background-color: #fef2f2; }
+        .type-B { color: #3b82f6; border-color: #3b82f6; background-color: #eff6ff; }
+        .type-AB { color: #a855f7; border-color: #a855f7; background-color: #faf5ff; }
+        .type-O { color: #64748b; border-color: #94a3b8; background-color: #f8fafc; }
+
+        .blood-badge {
+            font-size: 0.8rem;
+            font-weight: 900;
+            padding: 2px 10px;
+            border-radius: 999px;
+            border: 2px solid;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .pheno-choice-btn {
+            font-size: 0.9rem;
+            font-weight: 900;
+            width: 50px;
+            height: 40px;
+            border-radius: 8px;
+            transition: transform 0.1s;
+        }
+        .pheno-choice-btn:active { transform: scale(0.9); }
+
+        /* 統計輸入優化 */
+        .stat-input {
+            width: 54px;
+            height: 54px;
+            text-align: center;
+            border: 3px solid #e2e8f0;
+            border-radius: 12px;
+            font-weight: 900;
+            font-size: 1.8rem;
+            outline: none;
+            background-color: white;
+            transition: all 0.2s;
+        }
+        .stat-input:focus { border-color: #6366f1; transform: scale(1.05); }
+        
+        /* 修改輸入正確的顏色：使用靛藍色避免與母方綠色重複 */
+        .stat-input.correct { border-color: #6366f1; background-color: #eef2ff; color: #4338ca; }
+        .stat-input.wrong { border-color: #ef4444; background-color: #fef2f2; animation: shake 0.4s; }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-4px); }
+            75% { transform: translateX(4px); }
+        }
+
+        #custom-modal {
+            background-color: rgba(0,0,0,0.5);
+            backdrop-filter: blur(4px);
+        }
+
+        /* 慶祝動畫背景 */
+        .success-gradient {
+            background: linear-gradient(135deg, #4f46e5, #7c3aed);
+            box-shadow: 0 10px 20px -5px rgba(79, 70, 229, 0.4);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center p-4">
+
+    <header class="w-full max-w-4xl mt-2 mb-4 text-center">
+        <h1 class="text-4xl font-black text-slate-900 tracking-tight">ABO 血型遺傳練習</h1>
+        <p class="text-slate-600 text-lg font-bold mt-1">理解共顯性與複等位基因</p>
+    </header>
+
+    <!-- 親代組合選擇 -->
+    <nav class="w-full max-w-5xl flex flex-wrap justify-center gap-2 mb-6">
+        <button onclick="setCross(['IA', 'IA'], ['i', 'i'], this)" class="cross-btn px-4 py-2 bg-white rounded-xl shadow-md font-black text-slate-700 text-sm border-2 border-transparent transition-all">I<sup>A</sup>I<sup>A</sup> × ii</button>
+        <button onclick="setCross(['IA', 'IB'], ['i', 'i'], this)" class="cross-btn px-4 py-2 bg-white rounded-xl shadow-md font-black text-slate-700 text-sm border-2 border-transparent transition-all">I<sup>A</sup>I<sup>B</sup> × ii</button>
+        <button onclick="setCross(['IA', 'i'], ['IB', 'i'], this)" class="cross-btn px-4 py-2 bg-white rounded-xl shadow-md font-black text-slate-700 text-sm border-2 border-transparent transition-all">I<sup>A</sup>i × I<sup>B</sup>i</button>
+        <button onclick="setCross(['IA', 'IB'], ['IA', 'IB'], this)" class="cross-btn px-4 py-2 bg-white rounded-xl shadow-md font-black text-slate-700 text-sm border-2 border-transparent transition-all">I<sup>A</sup>I<sup>B</sup> × I<sup>A</sup>I<sup>B</sup></button>
+        <button onclick="setCross(['i', 'i'], ['i', 'i'], this)" class="cross-btn px-4 py-2 bg-white rounded-xl shadow-md font-black text-slate-700 text-sm border-2 border-transparent transition-all">ii × ii</button>
+        <button onclick="openCustomModal()" class="px-5 py-2 bg-slate-800 text-white rounded-xl shadow-md font-black text-sm hover:bg-slate-900 transition ml-2">自由探索 ⚙️</button>
+    </nav>
+
+    <!-- 1. 公共區域：配子池 -->
+    <div class="w-full max-w-6xl flex flex-col sm:flex-row gap-6 sm:gap-12 mb-8 justify-center items-center">
+        <div class="text-center">
+            <div class="flex items-center justify-center gap-2 mb-2">
+                <p class="text-orange-600 font-black text-base">♂ 父方</p>
+                <div id="father-badge" class="blood-badge"></div>
+            </div>
+            <div id="father-pool" class="flex gap-4 p-4 bg-orange-50 rounded-2xl border-2 border-orange-100 min-w-[150px] justify-center h-[90px]"></div>
+        </div>
+        <div class="text-center">
+            <div class="flex items-center justify-center gap-2 mb-2">
+                <p class="text-green-600 font-black text-base">♀ 母方</p>
+                <div id="mother-badge" class="blood-badge"></div>
+            </div>
+            <div id="mother-pool" class="flex gap-4 p-4 bg-green-50 rounded-2xl border-2 border-green-100 min-w-[150px] justify-center h-[90px]"></div>
+        </div>
+    </div>
+
+    <main class="w-full max-w-6xl flex flex-col lg:flex-row items-start justify-center gap-8 lg:gap-12 px-4">
+        
+        <!-- 2. 左側：棋盤 -->
+        <div class="flex flex-col items-center lg:w-[550px]">
+            <div class="punnett-grid" id="punnett-area">
+                <div class="flex items-center justify-center font-black text-slate-300 text-base italic">F1</div>
+                <div id="slot-top-0" class="slot father-source" data-side="father" data-idx="0"></div>
+                <div id="slot-top-1" class="slot father-source" data-side="father" data-idx="1"></div>
+                
+                <div id="slot-left-0" class="slot mother-source" data-side="mother" data-idx="0"></div>
+                <div class="cell" id="cell-0-0" data-r="0" data-c="0"></div>
+                <div class="cell" id="cell-0-1" data-r="0" data-c="1"></div>
+
+                <div id="slot-left-1" class="slot mother-source" data-side="mother" data-idx="1"></div>
+                <div class="cell" id="cell-1-0" data-r="1" data-c="0"></div>
+                <div class="cell" id="cell-1-1" data-r="1" data-c="1"></div>
+            </div>
+            
+            <p id="hint-text" class="mt-6 text-slate-700 font-black bg-white px-8 py-3 rounded-full shadow-md text-xl border-2 border-slate-100 text-center max-w-sm">
+                請分配親代基因到棋盤邊緣格
+            </p>
+        </div>
+
+        <!-- 3. 右側：高度對齊的統計面板 -->
+        <div id="stats-panel" class="w-full lg:w-[480px] hidden">
+            <div class="bg-white p-6 rounded-3xl shadow-2xl border-4 border-slate-50 stats-grid-container">
+                
+                <!-- 頂部列：對齊父方配子列 -->
+                <div class="flex items-center justify-between border-b-2 border-slate-50 pb-2">
+                    <h3 class="text-3xl font-black text-slate-800">實驗統計</h3>
+                    <div id="stat-status" class="text-sm font-bold bg-amber-100 text-amber-600 px-4 py-1 rounded-full shadow-sm">進行中</div>
+                </div>
+
+                <!-- 第一列輸入 -->
+                <div class="flex flex-col justify-center">
+                    <p class="text-sm font-black text-slate-400 uppercase tracking-widest mb-3">1. 填入基因型個數：</p>
+                    <div id="genotype-inputs" class="grid grid-cols-4 gap-3 bg-slate-50/80 p-4 rounded-2xl border-2 border-slate-100 shadow-inner">
+                        <!-- JS Inject -->
+                    </div>
+                </div>
+
+                <!-- 第二列輸入 -->
+                <div class="flex flex-col justify-center">
+                    <p class="text-sm font-black text-slate-400 uppercase tracking-widest mb-2">2. 填入血型表現個數：</p>
+                    <div class="grid grid-cols-4 gap-3">
+                        <div class="flex flex-col items-center bg-red-50/50 p-2 rounded-xl border-2 border-red-100 shadow-sm">
+                            <span class="font-black text-red-600 text-lg mb-1">A型</span>
+                            <input type="number" id="input-type-A" class="stat-input w-full" placeholder="0">
+                        </div>
+                        <div class="flex flex-col items-center bg-blue-50/50 p-2 rounded-xl border-2 border-blue-100 shadow-sm">
+                            <span class="font-black text-blue-600 text-lg mb-1">B型</span>
+                            <input type="number" id="input-type-B" class="stat-input w-full" placeholder="0">
+                        </div>
+                        <div class="flex flex-col items-center bg-purple-50/50 p-2 rounded-xl border-2 border-purple-100 shadow-sm">
+                            <span class="font-black text-purple-600 text-lg mb-1">AB型</span>
+                            <input type="number" id="input-type-AB" class="stat-input w-full" placeholder="0">
+                        </div>
+                        <div class="flex flex-col items-center bg-slate-100/50 p-2 rounded-xl border-2 border-slate-200 shadow-sm">
+                            <span class="font-black text-slate-600 text-lg mb-1">O型</span>
+                            <input type="number" id="input-type-O" class="stat-input w-full" placeholder="0">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 面板下方 -->
+                <div class="mt-2 space-y-4">
+                    <button id="btn-verify" onclick="verifyStats()" class="w-full py-3 bg-indigo-600 text-white rounded-2xl font-black text-2xl hover:bg-indigo-700 shadow-lg transition transform active:scale-95">
+                        驗證數據
+                    </button>
+
+                    <!-- 最終報告：將成功顏色改為靛藍色/紫色漸層 -->
+                    <div id="final-report" class="hidden animate-in fade-in duration-500">
+                        <div class="bg-indigo-50 p-6 rounded-2xl border-2 border-indigo-200 text-center shadow-inner">
+                            <div class="inline-block px-10 py-3 success-gradient text-white rounded-full font-black text-3xl animate-bounce shadow-xl">
+                                驗證成功！ 🥳
+                            </div>
+                        </div>
+                        <button onclick="resetCurrentCross()" class="w-full mt-4 py-3 bg-slate-900 text-white rounded-2xl font-black text-xl shadow-lg hover:bg-slate-800 transition">練習下一組</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 自由探索 Modal -->
+    <div id="custom-modal" class="fixed inset-0 z-[10000] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-md rounded-3xl p-8 shadow-2xl border-t-8 border-indigo-600">
+            <h2 class="text-3xl font-black text-slate-900 mb-8 text-center">設定親代基因</h2>
+            <div class="space-y-10">
+                <div>
+                    <p class="text-orange-600 font-black mb-4 text-center text-xl">♂ 父方組合</p>
+                    <div class="flex gap-6 justify-center">
+                        <button onclick="toggleAllele('custom-f1')" id="custom-f1" class="allele allele-father" data-val="IA" style="width:70px; height:70px; font-size:1.8rem;">I<sup>A</sup></button>
+                        <button onclick="toggleAllele('custom-f2')" id="custom-f2" class="allele allele-father" data-val="i" style="width:70px; height:70px; font-size:1.8rem;">i</button>
+                    </div>
+                </div>
+                <div>
+                    <p class="text-green-600 font-black mb-4 text-center text-xl">♀ 母方組合</p>
+                    <div class="flex gap-6 justify-center">
+                        <button onclick="toggleAllele('custom-m1')" id="custom-m1" class="allele allele-mother" data-val="IB" style="width:70px; height:70px; font-size:1.8rem;">I<sup>B</sup></button>
+                        <button onclick="toggleAllele('custom-m2')" id="custom-m2" class="allele allele-mother" data-val="i" style="width:70px; height:70px; font-size:1.8rem;">i</button>
+                    </div>
+                </div>
+                <div class="flex gap-4 pt-6">
+                    <button onclick="closeCustomModal()" class="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-xl">取消</button>
+                    <button onclick="applyCustomCross()" class="flex-2 py-4 bg-indigo-600 text-white rounded-2xl font-black px-10 text-xl shadow-lg">確認</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const ALLELE_DATA = {
+            'IA': { html: 'I<sup>A</sup>', priority: 1 },
+            'IB': { html: 'I<sup>B</sup>', priority: 2 },
+            'i': { html: 'i', priority: 3 }
+        };
+
+        const PHENOTYPE_RULES = {
+            'IAIA': 'A', 'IAi': 'A',
+            'IBIB': 'B', 'IBi': 'B',
+            'IAIB': 'AB', 'ii': 'O'
+        };
+
+        let state = {
+            cross: { father: ['IA', 'i'], mother: ['IB', 'i'] },
+            headerSlots: { father: [null, null], mother: [null, null] },
+            cells: Array.from({length: 2}, () => Array.from({length: 2}, () => ({ father: null, mother: null, pheno: null }))),
+            isDone: false
+        };
+
+        window.onload = () => {
+            const btns = document.querySelectorAll('.cross-btn');
+            setCross(['IA', 'i'], ['IB', 'i'], btns[2]);
+            initDragSystem();
+        };
+
+        function getBloodType(alleles) {
+            const sorted = [...alleles].sort((a, b) => ALLELE_DATA[a].priority - ALLELE_DATA[b].priority).join('');
+            return PHENOTYPE_RULES[sorted] || 'Unknown';
+        }
+
+        function setCross(f, m, btn) {
+            state.cross = { father: f, mother: m };
+            document.querySelectorAll('.cross-btn').forEach(b => b.classList.remove('ring-4', 'ring-indigo-200', 'border-indigo-600', 'bg-indigo-50'));
+            if(btn) btn.classList.add('ring-4', 'ring-indigo-200', 'border-indigo-600', 'bg-indigo-50');
+            resetCurrentCross();
+        }
+
+        function resetCurrentCross() {
+            state.headerSlots = { father: [null, null], mother: [null, null] };
+            state.cells = Array.from({length: 2}, () => Array.from({length: 2}, () => ({ father: null, mother: null, pheno: null })));
+            state.isDone = false;
+            
+            document.querySelectorAll('.slot').forEach(s => { s.innerHTML = ''; s.classList.remove('occupied'); });
+            document.querySelectorAll('.cell').forEach(c => { c.innerHTML = ''; c.className = 'cell'; });
+            document.getElementById('stats-panel').classList.add('hidden');
+            document.getElementById('final-report').classList.add('hidden');
+            document.getElementById('btn-verify').classList.remove('hidden');
+            document.getElementById('stat-status').innerText = '進行中';
+            document.getElementById('stat-status').className = 'text-sm font-bold bg-amber-100 text-amber-600 px-4 py-1 rounded-full shadow-sm';
+            
+            updateHint('請將親代基因分配到棋盤邊緣格');
+            renderPools();
+            renderBadges();
+        }
+
+        function renderPools() {
+            const fPool = document.getElementById('father-pool');
+            const mPool = document.getElementById('mother-pool');
+            fPool.innerHTML = ''; mPool.innerHTML = '';
+            state.cross.father.forEach((a, i) => fPool.appendChild(createAllele(a, 'father', i, 'pool')));
+            state.cross.mother.forEach((a, i) => mPool.appendChild(createAllele(a, 'mother', i, 'pool')));
+        }
+
+        function renderBadges() {
+            const fType = getBloodType(state.cross.father);
+            const mType = getBloodType(state.cross.mother);
+            const fB = document.getElementById('father-badge');
+            fB.innerHTML = `🩸 ${fType}型`;
+            fB.className = `blood-badge type-${fType}`;
+            const mB = document.getElementById('mother-badge');
+            mB.innerHTML = `🩸 ${mType}型`;
+            mB.className = `blood-badge type-${mType}`;
+        }
+
+        function createAllele(val, side, id, location) {
+            const div = document.createElement('div');
+            div.className = `allele allele-${side}`;
+            div.innerHTML = ALLELE_DATA[val].html;
+            div.dataset.value = val;
+            div.dataset.side = side;
+            div.dataset.id = id;
+            div.dataset.location = location;
+            div.style.position = (location === 'pool') ? 'relative' : 'static';
+            return div;
+        }
+
+        function initDragSystem() {
+            let activeEl = null, clone = null, grabOffset = { x: 0, y: 0 };
+
+            document.addEventListener('pointerdown', e => {
+                const allele = e.target.closest('.allele');
+                if (!allele) return;
+                activeEl = allele;
+                const rect = activeEl.getBoundingClientRect();
+                grabOffset = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+                clone = activeEl.cloneNode(true);
+                clone.classList.add('dragging');
+                clone.style.left = (e.pageX - grabOffset.x) + 'px';
+                clone.style.top = (e.pageY - grabOffset.y) + 'px';
+                clone.style.width = rect.width + 'px';
+                clone.style.height = rect.height + 'px';
+                document.body.appendChild(clone);
+                activeEl.style.opacity = (activeEl.dataset.location === 'pool') ? '0.3' : '1';
+            });
+
+            document.addEventListener('pointermove', e => {
+                if (!clone) return;
+                clone.style.left = (e.pageX - grabOffset.x) + 'px';
+                clone.style.top = (e.pageY - grabOffset.y) + 'px';
+            });
+
+            document.addEventListener('pointerup', e => {
+                if (!clone) return;
+                const dropSuccess = handleDrop(e.clientX, e.clientY, activeEl);
+                if (!dropSuccess) activeEl.style.opacity = '1';
+                else if (activeEl.dataset.location === 'pool') activeEl.style.visibility = 'hidden';
+                document.body.removeChild(clone);
+                clone = null; activeEl = null;
+            });
+        }
+
+        function handleDrop(x, y, el) {
+            const side = el.dataset.side, loc = el.dataset.location, val = el.dataset.value;
+            if (loc === 'pool') {
+                const slot = findTarget('.slot:not(.occupied)', x, y);
+                if (slot && slot.dataset.side === side) {
+                    const idx = slot.dataset.idx;
+                    state.headerSlots[side][idx] = val;
+                    slot.classList.add('occupied');
+                    slot.appendChild(createAllele(val, side, idx, 'header'));
+                    if (isAllHeadersFilled()) updateHint('配子已分離！將邊緣配子拉入子代格');
+                    return true;
+                }
+            } else if (loc === 'header') {
+                const cell = findTarget('.cell', x, y);
+                if (cell) {
+                    const r = cell.dataset.r, c = cell.dataset.c, idx = parseInt(el.dataset.id);
+                    const isF = (side === 'father' && idx == c && !state.cells[r][c].father);
+                    const isM = (side === 'mother' && idx == r && !state.cells[r][c].mother);
+                    if (isF || isM) {
+                        if (isF) state.cells[r][c].father = val; else state.cells[r][c].mother = val;
+                        updateCellUI(cell, r, c);
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function findTarget(selector, x, y) {
+            const elements = document.querySelectorAll(selector);
+            for (let el of elements) {
+                const r = el.getBoundingClientRect();
+                if (x > r.left && x < r.right && y > r.top && y < r.bottom) return el;
+            }
+            return null;
+        }
+
+        function isAllHeadersFilled() {
+            return state.headerSlots.father.every(v => v !== null) && state.headerSlots.mother.every(v => v !== null);
+        }
+
+        function updateCellUI(cell, r, c) {
+            const data = state.cells[r][c];
+            cell.innerHTML = '';
+            const container = document.createElement('div');
+            container.className = 'flex gap-2 mb-3';
+            if (data.father) container.appendChild(createStaticAllele(data.father, 'father'));
+            if (data.mother) container.appendChild(createStaticAllele(data.mother, 'mother'));
+            cell.appendChild(container);
+
+            if (data.father && data.mother) {
+                if (!data.pheno) {
+                    const grid = document.createElement('div');
+                    grid.className = 'grid grid-cols-2 gap-1 px-2 w-full';
+                    ['A', 'B', 'AB', 'O'].forEach(type => {
+                        const btn = document.createElement('button');
+                        btn.className = `pheno-choice-btn type-${type} border-2 text-[12px] font-black`;
+                        btn.innerText = type;
+                        btn.onclick = () => checkPheno(r, c, type);
+                        grid.appendChild(btn);
+                    });
+                    cell.appendChild(grid);
+                } else {
+                    renderPhenoResult(cell, data.pheno);
+                }
+            }
+        }
+
+        function createStaticAllele(val, side) {
+            const a = createAllele(val, side, 0, 'static');
+            a.style.cursor = 'default'; return a;
+        }
+
+        function checkPheno(r, c, choice) {
+            const data = state.cells[r][c];
+            const correct = getBloodType([data.father, data.mother]);
+            const cell = document.getElementById(`cell-${r}-${c}`);
+            if (choice === correct) {
+                state.cells[r][c].pheno = choice;
+                cell.className = `cell border-2 border-${choice === 'A' ? 'red' : choice === 'B' ? 'blue' : choice === 'AB' ? 'purple' : 'slate'}-500 bg-${choice === 'A' ? 'red' : choice === 'B' ? 'blue' : choice === 'AB' ? 'purple' : 'slate'}-50 shadow-inner`;
+                updateCellUI(cell, r, c);
+                checkAllDone();
+            } else {
+                cell.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-5px)' }, { transform: 'translateX(5px)' }, { transform: 'translateX(0)' }], { duration: 300 });
+            }
+        }
+
+        function renderPhenoResult(cell, type) {
+            const label = document.createElement('div');
+            label.className = `mt-1 text-base font-black px-4 py-1 rounded-full type-${type} border-2 shadow-sm`;
+            label.innerText = `${type} 型`;
+            cell.appendChild(label);
+        }
+
+        function updateHint(txt) {
+            document.getElementById('hint-text').innerText = txt;
+        }
+
+        function checkAllDone() {
+            if (state.cells.flat().every(c => c.pheno !== null)) {
+                updateHint('填入統計報表進行驗證');
+                prepareStatsPanel();
+            } else {
+                updateHint('點擊格子判斷表現型');
+            }
+        }
+
+        function prepareStatsPanel() {
+            const panel = document.getElementById('stats-panel');
+            panel.classList.remove('hidden');
+            const gtContainer = document.getElementById('genotype-inputs');
+            gtContainer.innerHTML = '';
+            
+            const presentGts = new Set();
+            state.cells.flat().forEach(c => {
+                const gt = [c.father, c.mother].sort((a,b) => ALLELE_DATA[a].priority - ALLELE_DATA[b].priority);
+                presentGts.add(gt.join(''));
+            });
+
+            [...presentGts].sort().forEach(gt => {
+                const display = gt.replace(/IA/g, 'I<sup>A</sup>').replace(/IB/g, 'I<sup>B</sup>');
+                gtContainer.innerHTML += `
+                    <div class="flex flex-col items-center">
+                        <span class="font-black text-xl mb-1 text-slate-700">${display}</span>
+                        <input type="number" id="input-gt-${gt}" class="stat-input w-full" placeholder="0" data-gt="${gt}">
+                    </div>
+                `;
+            });
+
+            document.querySelectorAll('.stat-input').forEach(i => {
+                i.value = ''; i.classList.remove('correct', 'wrong');
+            });
+        }
+
+        function verifyStats() {
+            const actualGtCounts = {};
+            const actualPhCounts = { 'A': 0, 'B': 0, 'AB': 0, 'O': 0 };
+            state.cells.flat().forEach(c => {
+                const gt = [c.father, c.mother].sort((a,b) => ALLELE_DATA[a].priority - ALLELE_DATA[b].priority).join('');
+                actualGtCounts[gt] = (actualGtCounts[gt] || 0) + 1;
+                actualPhCounts[c.pheno]++;
+            });
+            let allCorrect = true;
+            document.querySelectorAll('[data-gt]').forEach(input => {
+                const gt = input.dataset.gt;
+                const val = parseInt(input.value) || 0;
+                input.classList.remove('correct', 'wrong');
+                if (val === (actualGtCounts[gt] || 0)) input.classList.add('correct');
+                else { input.classList.add('wrong'); allCorrect = false; }
+            });
+            ['A', 'B', 'AB', 'O'].forEach(type => {
+                const input = document.getElementById(`input-type-${type}`);
+                const val = parseInt(input.value) || 0;
+                input.classList.remove('correct', 'wrong');
+                if (val === actualPhCounts[type]) input.classList.add('correct');
+                else { input.classList.add('wrong'); allCorrect = false; }
+            });
+            if (allCorrect) showFinalReport(actualPhCounts);
+        }
+
+        function showFinalReport(phCounts) {
+            document.getElementById('stat-status').innerText = '驗證成功';
+            document.getElementById('stat-status').className = 'text-sm font-bold bg-indigo-600 text-white px-4 py-1 rounded-full shadow-md';
+            document.getElementById('btn-verify').classList.add('hidden');
+            document.getElementById('final-report').classList.remove('hidden');
+            updateHint('恭喜練習完成！');
+        }
+
+        function openCustomModal() { document.getElementById('custom-modal').classList.remove('hidden'); }
+        function closeCustomModal() { document.getElementById('custom-modal').classList.add('hidden'); }
+        function toggleAllele(id) {
+            const el = document.getElementById(id);
+            const cycle = ['IA', 'IB', 'i'];
+            let current = el.dataset.val;
+            let next = cycle[(cycle.indexOf(current) + 1) % 3];
+            el.dataset.val = next;
+            el.innerHTML = ALLELE_DATA[next].html;
+        }
+        function applyCustomCross() {
+            const f = [document.getElementById('custom-f1').dataset.val, document.getElementById('custom-f2').dataset.val];
+            const m = [document.getElementById('custom-m1').dataset.val, document.getElementById('custom-m2').dataset.val];
+            setCross(f, m, null);
+            closeCustomModal();
+        }
+    </script>
+</body>
+</html>
